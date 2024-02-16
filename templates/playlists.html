@@ -1,0 +1,40 @@
+{% extends "base.html" %} {% block title %}Playlists{% endblock %} {% block
+content %} {% block pagination %}
+<div id="pagination">
+  <small>
+    {% if playlists.previous %}
+    <a href="/playlists?page={{ page - 1 }}">Previous</a>
+    {% endif %} {{ playlists.offset }} - {{ playlists.total if playlists.offset
+    + playlists.limit - 1 > playlists.total else playlists.offset +
+    playlists.limit - 1 }} / {{ playlists.total }} {% if playlists.next %}
+    <a href="/playlists?page={{ page + 1 }}">Next</a>
+    {% endif %}
+  </small>
+</div>
+{% endblock %}
+<div id="playlists">
+  <ul id="playlists-list">
+    <li>
+      Saved Songs (private)
+      <a href="/analyze_saved">Analyze</a>
+    </li>
+    {% for playlist in playlists['items'] %}
+    <li>
+      {% if playlist.public %}
+      <a href="{{ playlist.external_urls.spotify }}">
+        {% endif %} {% if playlist.images %}
+        <img
+          src="{{ playlist.images.0.url }}"
+          alt="{{ playlist.name }}"
+          width="120"
+        />
+        {% endif %} {{ playlist.name }} {% if playlist.public %}
+      </a>
+      {% else %} (private) {% endif %}
+      <small>{{ playlist.owner.display_name }}</small>
+      <a href="/analyze?id={{ playlist.id }}">Analyze</a>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{{ self.pagination() }} {% endblock %}

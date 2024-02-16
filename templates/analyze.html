@@ -1,0 +1,56 @@
+{% extends "base.html" %} {% block title %}Analyze{% endblock %} {% block
+content %}
+<h2 class="title flex-title">
+  <span class="title-main">Playlist Analysis</span>
+  <span class="title-note">Configure the Playlist Splitting</span>
+</h2>
+<form method="post">
+  <label for="num_k_clusters">Number of Playlists</label>
+  <input
+    type="number"
+    name="k_clusters"
+    min="2"
+    value="2"
+    id="num_k_clusters"
+  />
+  <button type="submit">Split</button>
+  <h3>Selectable Features</h3>
+  <ul class="checkboxes cards">
+    {% for histogram in histograms %}
+    <li>
+      <input
+        type="checkbox"
+        name="feature"
+        id="cb_{{ histogram['id'] }}"
+        value="{{histogram['id']}}"
+      />
+      <label for="cb_{{ histogram['id'] }}">
+        <img
+          src="data:image/png;base64,{{ histogram['data'] }}"
+          onload="this.width/=2;this.onload=null;"
+          alt="{{ histogram['title'] }}"
+        />
+      </label>
+    </li>
+    {% endfor %}
+  </ul>
+  <h3>Statistics</h3>
+  <ul class="cards">
+    <li>
+      <img
+        src="data:image/png;base64,{{ artists }}"
+        onload="this.width/=2;this.onload=null;"
+        alt="Top Artists"
+      />
+    </li>
+    <li>
+      <img
+        src="data:image/png;base64,{{ genres }}"
+        onload="this.width/=2;this.onload=null;"
+        alt="Top Genres"
+      />
+    </li>
+  </ul>
+  <button type="submit">Split</button>
+</form>
+{% endblock %}

@@ -1,0 +1,129 @@
+/* :root {
+  background-color: #242725;
+} */
+
+.title {
+  border-bottom: 1px solid #2b4433;
+  max-width: 100em;
+  margin: 1.5em 3em;
+
+  .title-note {
+    font-size: 65%;
+    color: #2e3b32;
+  }
+}
+
+.flex-title {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+
+  > span {
+    white-space: nowrap;
+  }
+
+  .title-main {
+    flex-grow: 1;
+  }
+}
+
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  align-items: stretch;
+  align-content: space-around;
+  gap: 5px;
+
+  list-style: none;
+
+  img {
+    display: block;
+    border-radius: 7px;
+  }
+}
+
+.color-box {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.vertical-grow {
+  display: flex;
+  flex-direction: column;
+  > * {
+    margin: 0 auto;
+  }
+}
+
+input {
+  max-width: 100%;
+}
+input[type="number"] {
+  max-width: 75%;
+}
+
+.checkboxes input {
+  /* left: 0; */
+  opacity: 0;
+  position: absolute;
+  /* top: 0; */
+}
+
+.checkboxes input:focus + label {
+  outline: 4px solid #242725;
+}
+
+.checkboxes label {
+  padding: 0px;
+  display: block;
+  position: relative;
+  margin: 1px;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+.checkboxes label::before {
+  color: white;
+  content: " ";
+  display: block;
+  border-radius: 50%;
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  width: 2em;
+  height: 2em;
+  text-align: center;
+  line-height: 2em;
+  transition-duration: 0.4s;
+  transform: scale(0);
+  z-index: 2;
+}
+
+.checkboxes label img {
+  transition-duration: 0.2s;
+  transform-origin: 50% 50%;
+}
+
+.checkboxes :checked + label {
+  background-color: #242725;
+}
+
+.checkboxes :checked + label::before {
+  content: "✓";
+  background-color: #1db954;
+  transform: scale(1);
+}
+
+.checkboxes :checked + label img {
+  transform: scale(0.95);
+  box-shadow: 0 0 5px #555;
+  z-index: -1;
+}

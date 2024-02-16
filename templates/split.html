@@ -1,0 +1,63 @@
+{% extends "base.html" %} {% block title %}Split{% endblock %} {% block content
+%}
+<h3>Playlists</h3>
+<form method="post">
+  <button type="submit">Commit</button>
+  <div class="cards">
+    {% for list in lists %}
+    <div data-color="{{ list['color'] }}" class="color-box">
+      <div class="vertical-grow">
+        <label for="tx_name_{{ list['id'] }}">
+          Playlist Name
+          <input
+            type="text"
+            name="name_{{ list['id'] }}"
+            id="tx_name_{{ list['id'] }}"
+        /></label>
+        <div>{{ list['html'] | safe }}</div>
+        <div>
+          {% for feature, minmax in list['features'].items() %}
+          <span>{{ feature }}: {{ minmax[0] }} - {{ minmax[1] }}</span><br />
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    <script>
+      const colorboxes = document.querySelectorAll(".color-box");
+      colorboxes.forEach((colorbox) => {
+        colorbox.style.backgroundColor = colorbox.dataset.color;
+      });
+    </script>
+  </div>
+  <button type="submit">Commit</button>
+</form>
+<h3>Statistics</h3>
+<ul class="cards">
+  {% for histogram in histograms %}
+  <li>
+    <img
+      src="data:image/png;base64,{{ histogram['data'] }}"
+      onload="this.width/=2;this.onload=null;"
+      alt="{{ histogram['title'] }}"
+    />
+  </li>
+  {% endfor %}
+</ul>
+<ul class="cards">
+  <li>
+    <img
+      src="data:image/png;base64,{{ artists }}"
+      onload="this.width/=2;this.onload=null;"
+      alt="Top Artists"
+    />
+  </li>
+  <li>
+    <img
+      src="data:image/png;base64,{{ genres }}"
+      onload="this.width/=2;this.onload=null;"
+      alt="Top Genres"
+    />
+  </li>
+</ul>
+{% endblock %}
