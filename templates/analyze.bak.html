@@ -4,26 +4,17 @@ content %}
   <span class="title-main">Playlist Analysis</span>
   <span class="title-note">Configure the Playlist Splitting</span>
 </h2>
-<form method="post" action="{{ url_for('analyze_playlist') }}">
-  {{ form.crsf_token }}
-
-  <p>{{ form.k_clusters.label }} {{ form.k_clusters() }}</p>
-  {% if form.k_clusters.errors %}
-  <ul class="errors">
-    {% for error in form.k_clusters.errors %}
-    <li>{{ error }}</li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  <ul class="checkboxes cards">
-    {% for feature in feature_field_names %}
-    <li>{{ form[feature]() }} {{ form[feature].label }}</li>
-    {% endfor %}
-  </ul>
-
+<form method="post">
+  <label for="num_k_clusters">Number of Playlists</label>
+  <input
+    type="number"
+    name="k_clusters"
+    min="2"
+    value="2"
+    id="num_k_clusters"
+  />
   <button type="submit">Split</button>
-  <!-- <h3>Selectable Features</h3>
+  <h3>Selectable Features</h3>
   <ul class="checkboxes cards">
     {% for histogram in histograms %}
     <li>
@@ -42,7 +33,7 @@ content %}
       </label>
     </li>
     {% endfor %}
-  </ul> -->
+  </ul>
   <h3>Statistics</h3>
   <ul class="cards">
     <li>

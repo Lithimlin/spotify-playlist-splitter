@@ -1,38 +1,24 @@
-from os import urandom
 from datetime import timedelta
+from os import urandom
 
 # Spotipy
 import spotipy
-
 # Flask
-from flask import (
-    Flask,
-    flash,
-    redirect,
-    render_template,
-    request,
-    session,
-    make_response,
-)
-
-# Flask Response Type
-from werkzeug.wrappers import Response
-
+from flask import Flask, redirect, render_template, request, session, url_for
 # Session and Caching
-from flask_session import Session
 from flask_caching import Cache
-
+from flask_session import Session
 # Pandas
 from pandas import DataFrame
-
 # Pydantic for Settings
 from pydantic import AnyUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+# Flask Response Type
+from werkzeug.wrappers import Response
 
 # Source Code
-from src import clustering
+from src import clustering, forms
 from src.collect import PlaylistInfo, SavedInfo
-from src import forms
 
 
 class SpotifySettings(BaseSettings):
@@ -172,7 +158,7 @@ def playlists_json():
     return playlists
 
 
-def analyze_songs(songs: DataFrame) -> str:
+def analyze_songs(songs: DataFrame) -> str | Response:
     """
     Plots histograms and top artists for the given songs dataframe.
 
@@ -186,18 +172,21 @@ def analyze_songs(songs: DataFrame) -> str:
 
     hists = clustering.plot_stat_histograms(songs)
 
-    hists = clustering.tile_figure_to_byte_images(hists)
-    hists = [
-        {"id": col, "data": hist, "title": clustering.to_title_str(col)}
-        for col, hist in zip(cols, hists)
-    ]
+    hists_bytes = clustering.tile_figure_to_byte_images(hists)
+
+    form, feature_field_names = forms.split_form_builder(cols, hists_bytes)
+
+    if form.validate_on_submit():
+        print(form)
+        return redirect(url_for("split_playlist"))
 
     artists = clustering.plot_top_artists(songs, figsize=(10, 5))
     genres = clustering.plot_top_genres(songs, figsize=(10, 5))
 
     return render_template(
         "analyze.html",
-        histograms=hists,
+        form=form,
+        feature_field_names=feature_field_names,
         artists=clustering.convert_figure_to_str(artists),
         genres=clustering.convert_figure_to_str(genres),
         extra=dict(key="extra"),
@@ -209,42 +198,28 @@ def analyze_songs(songs: DataFrame) -> str:
 def analyze_playlist():
     playlist_id = request.args.get("id")
     playlist = PlaylistInfo(spotify=get_spotify(), playlist_id=playlist_id)
-    match request.method:
-        case "GET":
-            return analyze_songs(playlist.dataframe)
 
-        case "POST":
-            return validate_split_request(playlist.dataframe)
+    return analyze_songs(playlist.dataframe)
+    # match request.method:
+    #     case "GET":
+    #         return analyze_songs(playlist.dataframe)
+
+    #     case "POST":
+    #         return validate_split_request(playlist.dataframe)
 
 
 @app.route("/analyze_saved", methods=["GET", "POST"])
 @cache.cached()
 def analyze_saved_tracks():
     saved = SavedInfo(spotify=get_spotify())
-    match request.method:
-        case "GET":
-            return analyze_songs(saved.dataframe)
+    return analyze_songs(saved.dataframe)
+    # match request.method:
+    #     case "GET":
+    #         return analyze_songs(saved.dataframe)
 
-        case "POST":
-            return validate_split_request(saved.dataframe)
+    #     case "POST":
+    #         return validate_split_request(saved.dataframe)
 
-
-def validate_split_request(dataframe: DataFrame) -> Response:
-    features = request.form.getlist("feature")
-    if len(features) == 0:
-        flash("Please select at least one feature.")
-        print(request.url)
-        return redirect(request.url)
-
-    k_clusters = request.form.get("k_clusters")
-    if k_clusters is None:
-        flash("Please specify a number of playlists.")
-        print(request.url)
-        return redirect(request.url)
-
-    # TODO: Send to split path for sane caching
-    # Put dataframe in request JSON?
-    return split_playlist(dataframe, int(k_clusters), features)
 
 
 def split_list(songs: DataFrame, features: list[str]) -> Response:
