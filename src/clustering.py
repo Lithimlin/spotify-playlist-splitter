@@ -1,5 +1,4 @@
 import base64
-
 from io import BytesIO
 from itertools import product
 from typing import Optional
@@ -232,7 +231,7 @@ def get_clustered_lists(
 ) -> list[pd.DataFrame]:
     """Get a list of DataFrames for each cluster."""
     if features is None:
-        features = list()
+        features = []
     clusters = data["cluster"].sort_values().unique()
 
     data["duration"] = pd.to_timedelta(data["duration (s)"], unit="s")

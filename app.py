@@ -1,38 +1,52 @@
-from os import urandom
 from datetime import timedelta
+from functools import wraps
+from itertools import chain
+from os import urandom
+from random import shuffle
 
 # Spotipy
 import spotipy
-
 # Flask
-from flask import (
-    Flask,
-    flash,
-    redirect,
-    render_template,
-    request,
-    session,
-    make_response,
-)
-
-# Flask Response Type
-from werkzeug.wrappers import Response
-
+from flask import (Flask, abort, current_app, flash, redirect, render_template,
+                   request, session)
 # Session and Caching
-from flask_session import Session
 from flask_caching import Cache
-
+from flask_session import Session
 # Pandas
 from pandas import DataFrame
-
 # Pydantic for Settings
 from pydantic import AnyUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+# Flask Response Type
+from werkzeug.wrappers import Response
 
 # Source Code
 from src import clustering
 from src.collect import PlaylistInfo, SavedInfo
-from src import forms
+
+
+class AuthenticationError(RuntimeError):
+    """
+    Raised when the user is not authenticated.
+    """
+
+    def __init__(self, message: str, redirect_url: str = "/"):
+        super().__init__(message)
+        self.redirect_url = redirect_url
+
+
+def debug_only(func):
+    """
+    Decorator that only allows the function to be called in debug mode.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not current_app.debug:
+            abort(404)
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 class SpotifySettings(BaseSettings):
@@ -42,7 +56,7 @@ class SpotifySettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", env_prefix="SPOTIFY_"
+        env_file=".env", env_file_encoding="utf-8", env_prefix="SPOTIFY_", extra='ignore'
     )
 
     client_id: str
@@ -78,7 +92,7 @@ cache = Cache(app)
 Session(app)
 
 
-def get_spotify() -> spotipy.Spotify | Response:
+def get_spotify() -> spotipy.Spotify:
     """
     Returns a Spotify API client using the stored settings.
     If the stored access token is invalid, the user is redirected to the authorization page.
@@ -99,12 +113,12 @@ def get_spotify() -> spotipy.Spotify | Response:
     # Check if the stored access token is valid
     if not auth_manager.validate_token(cache_handler.get_cached_token()):
         # If not, redirect to the authorization page
-        return redirect("/")
+        raise AuthenticationError("User is not authenticated")
     return spotipy.Spotify(auth_manager=auth_manager)
 
 
 @app.route("/")
-def index() -> Response:
+def index() -> str | Response:
     """
     This function handles the root URL of the application.
     It checks if the user is already authenticated, and if not,
@@ -157,16 +171,41 @@ def sign_out():
 
 
 @app.route("/playlists")
-def playlists_page():
-    spotify = get_spotify()
+def playlists_page() -> str | Response:
+    """
+    Handles the playlists page of the application.
+    It retrieves the user's playlists from the Spotify API, and displays them in a pagination.
+
+    Returns:
+        str: The HTML code for the playlists page.
+        Response: A redirect response if authentication failed.
+    """
+    try:
+        spotify = get_spotify()
+    except AuthenticationError as ae:
+        flash(str(ae), category="error")
+        return redirect(ae.redirect_url)
+
     page = request.args.get("page", 1, type=int)
     playlists = spotify.current_user_playlists(limit=50, offset=50 * (page - 1))
     return render_template("playlists.html", playlists=playlists, page=page)
 
 
 @app.route("/playlists_json")
+@debug_only
 def playlists_json():
-    spotify = get_spotify()
+    """
+    A debug page to inspect the playlists returned by the Spotify API.
+
+    Returns:
+        Response: A JSON response containing the playlists.
+    """
+    try:
+        spotify = get_spotify()
+    except AuthenticationError as ae:
+        flash(str(ae), category="error")
+        return redirect(ae.redirect_url)
+
     page = request.args.get("page", 1, type=int)
     playlists = spotify.current_user_playlists(limit=50, offset=50 * (page - 1))
     return playlists
@@ -182,14 +221,14 @@ def analyze_songs(songs: DataFrame) -> str:
     Returns:
         str: The HTML code for the histograms and top artists figures.
     """
-    cols = clustering.get_clusterable_features(songs)
+    features = clustering.get_clusterable_features(songs)
 
-    hists = clustering.plot_stat_histograms(songs)
+    hists_figure = clustering.plot_stat_histograms(songs)
 
-    hists = clustering.tile_figure_to_byte_images(hists)
-    hists = [
-        {"id": col, "data": hist, "title": clustering.to_title_str(col)}
-        for col, hist in zip(cols, hists)
+    hists_bytes = clustering.tile_figure_to_byte_images(hists_figure)
+    hists_dict = [
+        {"id": feature, "data": histogram, "title": clustering.to_title_str(feature)}
+        for feature, histogram in zip(features, hists_bytes)
     ]
 
     artists = clustering.plot_top_artists(songs, figsize=(10, 5))
@@ -197,65 +236,114 @@ def analyze_songs(songs: DataFrame) -> str:
 
     return render_template(
         "analyze.html",
-        histograms=hists,
+        histograms=hists_dict,
         artists=clustering.convert_figure_to_str(artists),
         genres=clustering.convert_figure_to_str(genres),
         extra=dict(key="extra"),
     )
 
 
-@app.route("/analyze", methods=["GET", "POST"])
-@cache.cached(query_string=True)
-def analyze_playlist():
+@app.route("/analyze", methods=["GET"])
+# @cache.cached(query_string=True)
+def analyze_playlist() -> str | Response:
+    """
+    Handles the analysis page for playlists.
+    It retrieves songs from a given playlist ID, analyzes them, and displays the results.
+
+    Returns:
+        str: The HTML code for the analysis page.
+        Response: A redirect response if authentication failed.
+    """
+    try:
+        spotify = get_spotify()
+    except AuthenticationError as ae:
+        flash(str(ae), category="error")
+        return redirect(ae.redirect_url)
+
     playlist_id = request.args.get("id")
-    playlist = PlaylistInfo(spotify=get_spotify(), playlist_id=playlist_id)
-    match request.method:
-        case "GET":
-            return analyze_songs(playlist.dataframe)
 
-        case "POST":
-            return validate_split_request(playlist.dataframe)
+    if session.get("list_id") == playlist_id:
+        playlist_frame = DataFrame(session["songs_dict"])
+        return analyze_songs(playlist_frame)
 
+    playlist = PlaylistInfo(spotify=spotify, playlist_id=playlist_id)
 
-@app.route("/analyze_saved", methods=["GET", "POST"])
-@cache.cached()
-def analyze_saved_tracks():
-    saved = SavedInfo(spotify=get_spotify())
-    match request.method:
-        case "GET":
-            return analyze_songs(saved.dataframe)
+    session["songs_dict"] = playlist.dataframe.to_dict("list")
+    session["list_id"] = playlist_id
 
-        case "POST":
-            return validate_split_request(saved.dataframe)
+    return analyze_songs(playlist.dataframe)
 
 
-def validate_split_request(dataframe: DataFrame) -> Response:
+@app.route("/analyze_saved", methods=["GET"])
+# @cache.cached()
+def analyze_saved_tracks() -> str | Response:
+    """
+    Handles the analysis page for saved tracks.
+    It retrieves songs from the user's saved tracks, analyzes them, and displays the results.
+
+    Returns:
+        str: The HTML code for the analysis page.
+        Response: A redirect response if authentication failed.
+    """
+    try:
+        spotify = get_spotify()
+    except AuthenticationError as ae:
+        flash(str(ae), category="error")
+        return redirect(ae.redirect_url)
+
+    if session.get("list_id") == "saved":
+        saved_frame = DataFrame(session["songs_dict"])
+        return analyze_songs(saved_frame)
+
+    saved = SavedInfo(spotify=spotify)
+
+    session["songs_dict"] = saved.dataframe.to_dict("list")
+    session["list_id"] = "saved"
+
+    return analyze_songs(saved.dataframe)
+
+
+def validate_split_request() -> bool:
+    """
+    Validates the split request.
+
+    Returns:
+        bool: True if the request is valid, False otherwise.
+    """
     features = request.form.getlist("feature")
     if len(features) == 0:
         flash("Please select at least one feature.")
-        print(request.url)
-        return redirect(request.url)
+        return False
 
     k_clusters = request.form.get("k_clusters")
     if k_clusters is None:
         flash("Please specify a number of playlists.")
-        print(request.url)
-        return redirect(request.url)
+        return False
 
-    # TODO: Send to split path for sane caching
-    # Put dataframe in request JSON?
-    return split_playlist(dataframe, int(k_clusters), features)
+    return True
 
 
-def split_list(songs: DataFrame, features: list[str]) -> Response:
+def show_split_list(songs: DataFrame, features: list[str]) -> str:
+    """
+    Displays the clustered playlists.
+    First lists the clustered playlists with their songs,
+    then displays the histograms, top artists, and top genres.
+
+    Args:
+        songs (DataFrame): The songs dataframe.
+        features (list[str]): The features that were used for clustering.
+
+    Returns:
+        str: The HTML code for the split page.
+    """
     cols = clustering.get_clusterable_features(songs)
 
-    hists = clustering.plot_stat_histograms(songs)
+    hists_figure = clustering.plot_stat_histograms(songs)
 
-    hists = clustering.tile_figure_to_byte_images(hists)
-    hists = [
-        {"data": hist, "title": clustering.to_title_str(col)}
-        for col, hist in zip(cols, hists)
+    hists_bytes = clustering.tile_figure_to_byte_images(hists_figure)
+    hists_dict = [
+        {"data": histogram, "title": clustering.to_title_str(feature)}
+        for feature, histogram in zip(cols, hists_bytes)
     ]
 
     artists = clustering.plot_top_artists(songs, figsize=(10, 5))
@@ -296,22 +384,139 @@ def split_list(songs: DataFrame, features: list[str]) -> Response:
     return render_template(
         "split.html",
         lists=lists,
-        histograms=hists,
+        histograms=hists_dict,
         artists=clustering.convert_figure_to_str(artists),
         genres=clustering.convert_figure_to_str(genres),
     )
 
 
 @app.route("/split", methods=["POST"])
-def split_playlist(songs: DataFrame, k_clusters: int, features: list[str]) -> Response:
-    cache.delete_memoized(analyze_playlist)
-    cache.delete_memoized(analyze_saved_tracks)
+def split_playlist() -> str | Response:
+    """
+    Handles the split page for playlists.
+    It validates split requests,
+    clusters the songs in a given playlist,
+    then displays the lists, histograms, top artists, and top genres.
+
+    Returns:
+        str: The HTML code for the split page.
+        Response: A redirect response if form validation failed,
+            the user re-clustered, or shuffled a playlist.
+    """
+    if session.get("invalid_form") == "commit":
+        session["invalid_form"] = None
+
+        clusters = DataFrame(chain.from_iterable(session["clusters"]))
+        return show_split_list(clusters, session["features"])
+
+    if request.form.get("commit"):
+        return redirect("/commit", code=307)
+
+    if request.form.get("shuffle"):
+        cluster_id = int(request.form["shuffle"])
+        shuffle(session["clusters"][cluster_id])
+        session.modified = True
+
+        clusters = DataFrame(chain.from_iterable(session["clusters"]))
+        return show_split_list(clusters, session["features"])
+
+    if request.form.get("recluster"):
+        k_clusters = session["k_clusters"]
+        features = session["features"]
+
+    else:
+        if not validate_split_request():
+            playlist_id = session["list_id"]
+            if playlist_id == "saved":
+                return redirect("/analyze_saved")
+            return redirect(f"/analyze?id={playlist_id}")
+
+        k_clusters = int(request.form["k_clusters"])
+        features = request.form.getlist("feature")
+
+    songs = DataFrame(session["songs_dict"])
+
     songs["cluster"] = clustering.cluster_data(songs, k_clusters, features)
 
-    return split_list(songs, features)
+    clusters_list = [
+        songs.loc[songs["cluster"] == cluster_id].to_dict("records")
+        for cluster_id in range(k_clusters)
+    ]
 
-    # return songs.to_html()
-    # return render_template("split.html")
+    session["clusters"] = clusters_list
+    session["features"] = features
+    session["k_clusters"] = k_clusters
+
+    return show_split_list(songs, features)
+
+
+def create_playlist(name: str, songs: list[str]) -> None:
+    """
+    Creates a playlist with the given name and songs.
+
+    Args:
+        name (str): The name of the playlist.
+        songs (list[str]): The IDs of the songs to add to the playlist.
+    """
+    spotify = get_spotify()
+
+    playlist = spotify.user_playlist_create(
+        user=spotify.me()["id"],
+        name=name,
+        public=False,
+        collaborative=False,
+        description="Created by the Playlist Splitter",
+    )
+
+    spotify.user_playlist_add_tracks(
+        user=spotify.me()["id"], playlist_id=playlist["id"], tracks=songs
+    )
+
+
+@app.route("/commit", methods=["POST"])
+def commit_playlist() -> Response:
+    """
+    Handles the commit page for playlists.
+    It creates playlists with the given names and songs on a valid form.
+
+    Returns:
+        Response: A redirect response if authentication or form validation failed,
+            or the playlists were created successfully.
+    """
+    names = {
+        int(key.replace("name_", "")): name
+        for key, name in request.form.items()
+        if key.startswith("name_")
+    }
+
+    for name in names.values():
+        if name == "":
+            flash("Please specify a name for each playlist.", category="error")
+            session["invalid_form"] = "commit"
+            return redirect("/split", code=307)
+
+    clusters = session["clusters"]
+
+    playlists = {
+        name: [cluster["id"] for cluster in clusters[idx]]
+        for idx, name in names.items()
+    }
+
+    try:
+        for name, songs in playlists.items():
+            create_playlist(name, songs)
+    except AuthenticationError as ae:
+        flash(f"Could not authenticate with Spotify: {ae}", category="error")
+        session["invalid_form"] = "commit"
+        return redirect(ae.redirect_url)
+
+    session.pop("clusters", None)
+    session.pop("features", None)
+    session.pop("k_clusters", None)
+    session.pop("songs_dict", None)
+    session.pop("list_id", None)
+
+    return redirect("/playlists")
 
 
 if __name__ == "__main__":

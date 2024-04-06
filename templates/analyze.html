@@ -4,7 +4,7 @@ content %}
   <span class="title-main">Playlist Analysis</span>
   <span class="title-note">Configure the Playlist Splitting</span>
 </h2>
-<form method="post">
+<form method="post" action="/split">
   <label for="num_k_clusters">Number of Playlists</label>
   <input
     type="number"
@@ -22,7 +22,7 @@ content %}
         type="checkbox"
         name="feature"
         id="cb_{{ histogram['id'] }}"
-        value="{{histogram['id']}}"
+        value="{{ histogram['id'] }}"
       />
       <label for="cb_{{ histogram['id'] }}">
         <img
