@@ -3,7 +3,7 @@ flask_caching==2.3.1
 flask_session==0.8.0
 matplotlib==3.10.8
 pandas==3.0.1
-Pillow==12.1.0
+Pillow==12.1.1
 pydantic==2.12.5
 pydantic_settings==2.13.0
 scikit_learn==1.8.0
